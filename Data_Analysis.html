@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>SMI Parser with Mapping</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #eef2f7;
+        }
+
+        .container {
+            background: #fff;
+            padding: 25px 35px;
+            border-radius: 12px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+            max-width: 1000px;
+            width: 100%;
+        }
+
+        h2 {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        h3 {
+            margin: 10px 0 20px;
+            font-size: 16px;
+            color: #444;
+        }
+
+        .controls {
+            margin: 15px 0 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        input[type="file"] {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background: #fafafa;
+            cursor: pointer;
+        }
+
+        select {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background: #fdfdfd;
+            cursor: pointer;
+        }
+
+        .table-container {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 70vh;
+        }
+
+        table {
+            margin: 0 auto;
+            border-collapse: collapse;
+            min-width: 600px;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f4f6f9;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            background: #eef2ff;
+            color: #2f3ba2;
+        }
+
+        .collapsible {
+            max-height: 80px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .collapsible.expanded {
+            max-height: none;
+        }
+
+        .toggle-btn {
+            color: #007bff;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .toggle-btn:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>SMI Parser with Mapping</h2>
+        <h3 id="repList" style="display:none;">Available REP Codes: </h3>
+
+        <div class="controls">
+            <input type="file" id="txtfile" accept=".txt,text/plain" />
+            <label for="filterSelect" style="font-weight: 500;">Filter:</label>
+            <select id="filterSelect" style="display:none;">
+                <option value="ALL">Show All</option>
+            </select>
+        </div>
+
+        <div class="table-container">
+            <table id="smiTable" style="display:none;">
+                <thead>
+                    <tr>
+                        <th>SMI</th>
+                        <th>Value</th>
+                        <th>Mapped Description</th>
+                        <th>Additional Information</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const input = document.getElementById('txtfile');
+        const table = document.getElementById('smiTable');
+        const tbody = table.querySelector('tbody');
+        const filterSelect = document.getElementById('filterSelect');
+        const repList = document.getElementById('repList');
+        const allPatterns = {}; // { REP: Set(), R: Set(), ... }
+
+        const mapping = {
+            "DFD": "ACMS",
+            "CFD": "PFR/CFR",
+            "M10": "AOC",
+            "M11": "AOC",
+            "M12": "AOC",
+            "M13": "AOC",
+            "M14": "AOC",
+            "M15": "AOC",
+            "M30": "AOC",
+            "M31": "AOC",
+            "M32": "AOC",
+            "M33": "AOC",
+            "ARR": "AOC",
+            "DEP": "AOC",
+            "A80": "AOC",
+            "A81": "AOC"
+        };
+
+        // Define extractors once (easy to extend later)
+        const extractors = {
+            REP: /\/REP\d{3}/g,   // matches /REP123
+            R: /\bR\d{1,3}\b(?!P)/g // matches R123 but NOT REP123
+        };
+
+        // Extract MT, CB, TA, OX, DO counts inside SRR
+        function extractSRRData(content) {
+            const markers = ["MT", "CB", "TA", "OX", "DO"];
+            let results = [];
+
+            markers.forEach(marker => {
+                const regex = new RegExp(`${marker}([^/]*)/`, "g");
+                let match;
+
+                while ((match = regex.exec(content)) !== null) {
+                    const items = match[1].split(",")
+                        .map(s => s.trim())
+                        .filter(s => s !== "" && s.toLowerCase() !== "blank");
+                    results.push(`${marker}: ${items.length}`);
+                }
+            });
+
+            return results.length > 0 ? results.join(" | ") : "—";
+        }
+
+        input.addEventListener('change', () => {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const contents = e.target.result;
+                const lines = contents.split(/\r?\n/);
+
+                tbody.innerHTML = "";
+                let blocks = [];
+                let currentBlock = [];
+
+                lines.forEach(line => {
+                    if (/^DateTime:/i.test(line) && currentBlock.length > 0) {
+                        blocks.push(currentBlock);
+                        currentBlock = [line];
+                    } else {
+                        currentBlock.push(line);
+                    }
+                });
+                if (currentBlock.length > 0) blocks.push(currentBlock);
+
+                const mappedDescriptions = new Set();
+
+                blocks.forEach(block => {
+                    const smiLine = block.find(l => /^SMI:\s*/i.test(l));
+                    if (smiLine) {
+                        const value = smiLine.split(":")[1].trim();
+                        let dataContent = "—";
+                        let desc = mapping[value] || "—";
+                        let additionalInfo = "—";
+
+                        const directionLine = block.find(l => /^Direction:\s*/i.test(l));
+
+                        if (value === "DFD" && directionLine && /Uplink/i.test(directionLine)) {
+                            desc = "Uplink";
+                            dataContent = block.join("\n");
+                        } else if (desc === "PFR/CFR" && block.some(l => /\/SRR\//.test(l))) {
+                            desc = "SRR";
+                            dataContent = block.join("\n");
+                            // ✅ Extract MT, CB, TA, OX, DO counts
+                            additionalInfo = extractSRRData(dataContent);
+                        } else if (mapping[value]) {
+                            dataContent = block.join("\n");
+                        }
+
+                        // Generic pattern extraction
+                        let foundPatterns = [];
+                        for (const [key, regex] of Object.entries(extractors)) {
+                            const matches = dataContent.match(regex);
+                            if (matches && matches.length > 0) {
+                                foundPatterns.push(`${key}: ${matches.join(", ")}`);
+                                if (!allPatterns[key]) allPatterns[key] = new Set();
+                                matches.forEach(m => allPatterns[key].add(m));
+                            }
+                        }
+
+                        if (foundPatterns.length > 0) {
+                            if (additionalInfo !== "—") {
+                                additionalInfo += " | " + foundPatterns.join(" | ");
+                            } else {
+                                additionalInfo = foundPatterns.join(" | ");
+                            }
+                        }
+
+                        mappedDescriptions.add(desc);
+
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                        <td>SMI</td>
+                        <td>${value}</td>
+                        <td><span class="badge">${desc}</span></td>
+                        <td>${additionalInfo}</td>
+                        <td>
+                            <div class="collapsible"><pre style="margin:0;white-space:pre-wrap;">${dataContent}</pre></div>
+                            <button class="toggle-btn">Show more</button>
+                        </td>
+                    `;
+                        tbody.appendChild(row);
+                    }
+                });
+
+                // Build header summary dynamically
+                if (Object.keys(allPatterns).length > 0) {
+                    let summary = [];
+                    for (const [key, set] of Object.entries(allPatterns)) {
+                        if (set.size > 0) {
+                            summary.push(`${key} Codes: ${Array.from(set).join(", ")}`);
+                        }
+                    }
+                    repList.style.display = "block";
+                    repList.textContent = summary.join(" || ");
+                } else {
+                    repList.style.display = "none";
+                }
+
+                table.style.display = tbody.children.length > 0 ? "table" : "none";
+
+                if (tbody.children.length > 0) {
+                    filterSelect.innerHTML = '<option value="ALL">Show All</option>';
+                    mappedDescriptions.forEach(desc => {
+                        filterSelect.innerHTML += `<option value="${desc}">${desc}</option>`;
+                    });
+                    filterSelect.style.display = "inline-block";
+                } else {
+                    filterSelect.style.display = "none";
+                    alert("No SMI values found in file.");
+                }
+
+                tbody.querySelectorAll(".toggle-btn").forEach(btn => {
+                    btn.addEventListener("click", () => {
+                        const collapsible = btn.previousElementSibling;
+                        collapsible.classList.toggle("expanded");
+                        btn.textContent = collapsible.classList.contains("expanded")
+                            ? "Show less"
+                            : "Show more";
+                    });
+                });
+            };
+            reader.readAsText(file);
+        });
+
+        filterSelect.addEventListener("change", () => {
+            const selected = filterSelect.value;
+            Array.from(tbody.querySelectorAll("tr")).forEach(row => {
+                const desc = row.children[2].textContent.trim();
+                row.style.display = (selected === "ALL" || desc === selected) ? "" : "none";
+            });
+        });
+    </script>
+
+
+</body>
+
+</html>

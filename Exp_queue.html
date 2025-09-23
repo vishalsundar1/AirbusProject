@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>EXP dossier view</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f9f9f9;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 20px;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        h2,
+        h3 {
+            text-align: center;
+            margin-top: 0;
+            color: #222;
+        }
+
+        input,
+        select,
+        button {
+            margin: 5px;
+            padding: 6px 10px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: linear-gradient(90deg, #0056b3, #003d82);
+        }
+
+        .table-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-height: 70vh;
+            overflow-x: auto;
+            overflow-y: auto;
+            border: 1px solid #eaeaea;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fafafa;
+            box-sizing: border-box;
+            position: relative;
+            /* Add this */
+        }
+
+        #smiTable {
+            border-collapse: collapse;
+            min-width: 1000px;
+            /* ensures table is scrollable on smaller screens */
+            width: 100%;
+            font-size: 13px;
+        }
+
+        #smiTable th,
+        #smiTable td {
+            border: 1px solid #ccc;
+            padding: 6px 10px;
+            text-align: left;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+
+        #smiTable th {
+            background: #007bff;
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        #smiTable tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        #smiTable tbody tr:hover {
+            background: #f1f8ff;
+        }
+
+        #filters,
+        #barChart {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #barChart {
+            max-width: 500px;
+            /* or whatever smaller size you want */
+            max-height: 300px;
+            margin: 20px auto;
+        }
+
+        #downloadBtn svg {
+            transition: fill 0.2s ease;
+        }
+
+        #downloadBtn:hover svg {
+            fill: #0056b3;
+            /* darker blue on hover */
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            #smiTable {
+                font-size: 11px;
+                min-width: 800px;
+            }
+
+            input,
+            select,
+            button {
+                width: 100%;
+                margin: 5px 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Upload a .xlsx file</h2>
+        <h3>Upload TRM dump with only Open dossiers</h3>
+        <input type="file" id="xlsxfile" accept=".xlsx" />
+        <br />
+        <button id="uploadBtn">Upload & Render</button>
+
+        <div id="filters" style="display:none;">
+            <label>Filter by Submitted Date:</label>
+            <select id="dateFilter">
+                <option value="all">All</option>
+                <option value="2y">Last 2 years</option>
+                <option value="18m">Last 1 year 6 months</option>
+                <option value="1m">Last 1 month</option>
+                <option value="custom">Custom Range</option>
+            </select>
+
+            <label>Filter by Days Since Last Update:</label>
+            <select id="daysFilter">
+                <option value="all">All</option>
+                <option value="<=30">&lt;= 30 days</option>
+                <option value="30-50">30–50 days</option>
+                <option value="50-100">50–100 days</option>
+                <option value=">100">&gt; 100 days</option>
+            </select>
+
+            <label for="ownerFilter">Owner Team:</label>
+            <select id="ownerFilter">
+                <option value="all">All</option>
+                <option value="SDS_DigitalSolutions_L2">SDS_DigitalSolutions_L2</option>
+                <option value="N/A-SDS_DigitalSolutions_L2_AW-CUST">N/A-SDS_DigitalSolutions_L2_AW-CUST</option>
+                <option value="N/A-SDS_DigitalSolutions_L2_AW-EXP">N/A-SDS_DigitalSolutions_L2_AW-EXP</option>
+                <option value="N/A-SDS_DigitalSolutions_L2_AW-DEL">N/A-SDS_DigitalSolutions_L2_AW-DEL</option>
+            </select>
+
+            <input type="date" id="startDate" style="display:none;">
+            <input type="date" id="endDate" style="display:none;">
+            <button id="applyFilter">Apply</button>
+
+            <div id="dossierCount"></div>
+
+            <label><input type="checkbox" id="toggleCategory"> Show PMOPS Categories</label>
+            <label><input type="checkbox" id="toggleHighlight"> Highlight rows with External Ref &gt;=25 days</label>
+            <label><input type="checkbox" id="toggleHighlight15"> Highlight rows without External Ref &gt;=15
+                days</label>
+
+            <canvas id="barChart"></canvas>
+
+        </div>
+
+        <div class="table-container">
+            <!-- Font awesome icon starts -->
+            <!--!Font Awesome Free v5.15.4 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free -->
+            <div style="display:flex; justify-content:flex-end; margin-bottom:5px;"> <button id="downloadBtn"
+                    title="Download as XLS"
+                    style="background:none; border:none; cursor:pointer; display:none; padding:5px;"> <svg
+                        xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" width="22" height="22" fill="#007bff">
+                        <path
+                            d="M224 136V0H24C10.7 0 0 10.7 0 24v464c0 13.3 10.7 24 24 24h336c13.3 0 24-10.7 24-24V160H248c-13.2 0-24-10.8-24-24zm60.1 106.5L224 336l60.1 93.5c5.1 8-.6 18.5-10.1 18.5h-34.9c-4.4 0-8.5-2.4-10.6-6.3C208.9 405.5 192 373 192 373c-6.4 14.8-10 20-36.6 68.8-2.1 3.9-6.1 6.3-10.5 6.3H110c-9.5 0-15.2-10.5-10.1-18.5l60.3-93.5-60.3-93.5c-5.2-8 .6-18.5 10.1-18.5h34.8c4.4 0 8.5 2.4 10.6 6.3 26.1 48.8 20 33.6 36.6 68.5 0 0 6.1-11.7 36.6-68.5 2.1-3.9 6.2-6.3 10.6-6.3H274c9.5-.1 15.2 10.4 10.1 18.4zM384 121.9v6.1H256V0h6.1c6.4 0 12.5 2.5 17 7l97.9 98c4.5 4.5 7 10.6 7 16.9z" />
+                    </svg> </button> </div> <!-- Font awesome icon ends -->
+            <table id="smiTable">
+                <thead>
+                    <tr id="headerRow"></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const HEADERS = ["Dossier Ref", "Dossier Title", "Product", "Urgency", "External Ref", "Owner team", "Submitted Date", "Last Update"];
+        let parsedData = [], chartInstance = null, sortDirection = null;
+
+        function normalizeKey(key) { return key.toString().trim().replace(/\s+/g, " ").toLowerCase(); }
+
+        document.getElementById('xlsxfile').addEventListener('change', handleFile, false);
+        document.getElementById('uploadBtn').addEventListener('click', () => renderTable(parsedData), false);
+        document.getElementById('dateFilter').addEventListener('change', function () {
+            document.getElementById('startDate').style.display = this.value === 'custom' ? 'inline' : 'none';
+            document.getElementById('endDate').style.display = this.value === 'custom' ? 'inline' : 'none';
+        });
+        document.getElementById('applyFilter').addEventListener('click', () => renderTable(parsedData));
+        document.getElementById('toggleCategory').addEventListener('change', () => renderTable(parsedData));
+        document.getElementById('toggleHighlight').addEventListener('change', () => renderTable(parsedData));
+        document.getElementById('toggleHighlight15').addEventListener('change', () => renderTable(parsedData));
+        document.getElementById('daysFilter').addEventListener('change', () => renderTable(parsedData));
+        document.getElementById('ownerFilter').addEventListener('change', () => renderTable(parsedData));
+        document.getElementById('downloadBtn').addEventListener('click', downloadTableAsXLS);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                let json = XLSX.utils.sheet_to_json(worksheet, { defval: "", blankrows: false });
+                json = json.filter(row => row["Dossier Ref"] && row["Dossier Ref"].toString().trim() !== "");
+                parsedData = json.map(row => {
+                    const newRow = {};
+                    Object.keys(row).forEach(k => { newRow[normalizeKey(k)] = row[k]; });
+                    return newRow;
+                });
+                document.getElementById('filters').style.display = "block";
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- Business days difference ---
+        function businessDaysDiff(startDate, endDate) {
+            if (startDate > endDate) return 0;
+            let count = 0, current = new Date(startDate); current.setHours(0, 0, 0, 0);
+            const target = new Date(endDate); target.setHours(0, 0, 0, 0);
+            while (current < target) { if (![0, 6].includes(current.getDay())) count++; current.setDate(current.getDate() + 1); }
+            return count;
+        }
+
+        // --- External Ref processing & PMOPS ---
+        function processExternalRefs(dataArray) {
+            const list = [];
+            dataArray.forEach(row => {
+                let raw = row[normalizeKey("External Ref")] || "";
+                raw = raw.toString().replace(/^"|"$/g, '').replace(/\t/g, '');
+                const lines = raw.split(/\r?\n/);
+                lines.forEach(line => {
+                    const trimmed = line.trim();
+                    if (trimmed === "") list.push("");
+                    else trimmed.split(/\s*(?:\/|&|AND|,|;)\s*/i).forEach(item => list.push(item));
+                });
+                if (lines.length === 0) list.push("");
+            });
+            return list;
+        }
+
+        function categorizeExternalRefs(list) {
+            const counts = { Incidents: 0, RITMs: 0, Defects: 0, Requests: 0, Evolution: 0, Story: 0 };
+            list.forEach(item => {
+                if (!item) return;
+                if (/^INC/i.test(item)) counts.Incidents++;
+                else if (/^RITM/i.test(item)) counts.RITMs++;
+                else if (/^D-/i.test(item)) counts.Defects++;
+                else if (/^R-/i.test(item)) counts.Requests++;
+                else if (/^E-/i.test(item)) counts.Evolution++;
+                else if (/^S-/i.test(item)) counts.Story++;
+            });
+            return counts;
+        }
+
+        function renderBarChart(list) {
+            const counts = categorizeExternalRefs(list);
+            const ctx = document.getElementById('barChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, { type: 'bar', data: { labels: Object.keys(counts), datasets: [{ label: 'Count', data: Object.values(counts), backgroundColor: ['#007bff', '#28a745', '#ffc107', '#17a2b8', '#6f42c1', '#fd7e14'] }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } } });
+        }
+
+        // --- Render Table ---
+        function renderTable(data) {
+            if (!data.length) return alert("Please upload a file first!");
+            let filtered = [...data];
+
+            // --- Submitted Date filter ---
+            const filterVal = document.getElementById('dateFilter').value;
+            const today = new Date();
+            let start, end;
+            if (filterVal === '2y') start = new Date(today.getFullYear() - 2, today.getMonth(), today.getDate());
+            else if (filterVal === '18m') start = new Date(today.getFullYear() - 1, today.getMonth() - 6, today.getDate());
+            else if (filterVal === '1m') start = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+            else if (filterVal === 'custom') { const s = document.getElementById('startDate').value; const e = document.getElementById('endDate').value; if (s && e) { start = new Date(s); end = new Date(e); } else { alert("Select start & end dates"); return; } }
+            if (start) filtered = filtered.filter(row => {
+                const dateStr = row[normalizeKey("Submitted Date")]; if (!dateStr) return false;
+                const parts = dateStr.split("/"); if (parts.length !== 3) return false;
+                const d = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, y = parseInt(parts[2], 10);
+                const sd = new Date(y, m, d);
+                return (!end && sd >= start) || (end && sd >= start && sd <= end);
+            });
+
+            // --- Days filter ---
+            const daysFilterVal = document.getElementById('daysFilter').value;
+            filtered = filtered.filter(row => {
+                const lastUpdate = row[normalizeKey("Last Update")]; if (!lastUpdate) return daysFilterVal === 'all';
+                const parts = lastUpdate.split("/"); if (parts.length !== 3) return false;
+                const d = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, y = parseInt(parts[2], 10);
+                const daysDiff = businessDaysDiff(new Date(y, m, d), new Date());
+                if (daysFilterVal === "<=30") return daysDiff <= 30;
+                if (daysFilterVal === "30-50") return daysDiff >= 30 && daysDiff <= 50;
+                if (daysFilterVal === "50-100") return daysDiff >= 50 && daysDiff <= 100;
+                if (daysFilterVal == ">100") return daysDiff > 100;
+                return true;
+            });
+
+            // --- Owner Team filter ---
+            const ownerFilterVal = document.getElementById("ownerFilter").value;
+            if (ownerFilterVal !== 'all') filtered = filtered.filter(row => row[normalizeKey("Owner team")] === ownerFilterVal);
+
+            // --- Compute Days Since Last Update ---
+            const rowsWithDays = filtered.map(row => {
+                let daysDiff = ""; const upd = row[normalizeKey("Last Update")]; if (upd) { const parts = upd.split("/"); if (parts.length === 3) { const d = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1, y = parseInt(parts[2], 10); daysDiff = businessDaysDiff(new Date(y, m, d), new Date()); } } return { row, daysDiff };
+            });
+
+            // --- Sort by Days ---
+            if (sortDirection === 'asc') rowsWithDays.sort((a, b) => a.daysDiff - b.daysDiff);
+            else if (sortDirection === 'desc') rowsWithDays.sort((a, b) => b.daysDiff - a.daysDiff);
+
+            // --- Render table rows ---
+            const tbody = document.querySelector("#smiTable tbody"); tbody.innerHTML = "";
+            const headerRow = document.getElementById("headerRow"); headerRow.innerHTML = "";
+            HEADERS.concat(["Days Since Last Update"]).forEach(h => {
+                const th = document.createElement("th"); th.textContent = h;
+                if (h === "Days Since Last Update") { th.style.cursor = "pointer"; th.title = "Click to sort"; th.addEventListener("click", () => { sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'; renderTable(data); }); }
+                headerRow.appendChild(th);
+            });
+            rowsWithDays.forEach(({ row, daysDiff }) => {
+                const tr = document.createElement("tr");
+                HEADERS.forEach(h => { const td = document.createElement("td"); td.textContent = row[normalizeKey(h)] || ""; tr.appendChild(td); });
+                const tdDays = document.createElement("td"); tdDays.textContent = daysDiff; tr.appendChild(tdDays);
+                const highlight25 = document.getElementById("toggleHighlight").checked;
+                const highlight15 = document.getElementById("toggleHighlight15").checked;
+                const extRef = row[normalizeKey("External Ref")]?.toString().trim();
+                if (highlight25 && daysDiff >= 25 && extRef) tr.style.backgroundColor = "#ffe6e6";
+                else if (highlight15 && daysDiff >= 15 && !extRef) tr.style.backgroundColor = "#fff3cd";
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById("dossierCount").textContent = `Total dossiers: ${filtered.length}`;
+            document.getElementById("smiTable").style.display = filtered.length ? "table" : "none";
+            document.getElementById("downloadBtn").style.display = filtered.length ? "inline-block" : "none";
+
+            // --- PMOPS chart ---
+            if (document.getElementById("toggleCategory").checked) {
+                const extList = processExternalRefs(filtered);
+                renderBarChart(extList);
+            } else if (chartInstance) chartInstance.destroy();
+        }
+
+        // --- Download function ---
+        // --- Download function ---
+        function downloadTableAsXLS() {
+            const wb = XLSX.utils.book_new();
+            const ws_data = [];
+
+            // Add headers
+            const headers = HEADERS.concat(["Days Since Last Update"]);
+            ws_data.push(headers);
+
+            // Add table rows
+            const tbody = document.querySelector("#smiTable tbody");
+            for (const tr of tbody.rows) {
+                const row = [];
+                for (const td of tr.cells) row.push(td.textContent);
+                ws_data.push(row);
+            }
+
+            // Create worksheet
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+
+            // 🔹 Auto-size column widths
+            const colWidths = headers.map((h, i) => {
+                let maxLen = h.length;
+                ws_data.forEach(r => {
+                    const val = r[i] ? r[i].toString() : "";
+                    if (val.length > maxLen) maxLen = val.length;
+                });
+                return { wch: maxLen + 2 }; // add padding
+            });
+            ws['!cols'] = colWidths;
+
+            // Append sheet and save
+            XLSX.utils.book_append_sheet(wb, ws, "Filtered Dossiers");
+            XLSX.writeFile(wb, "dossiers.xlsx");
+        }
+
+    </script>
+</body>
+
+</html>

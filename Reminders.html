@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Reminder Calculator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #f9f9f9;
+        }
+
+        .container {
+            text-align: center;
+            background: #fff;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            max-width: 95%;
+            width: 100%;
+        }
+
+        input[type="file"] {
+            margin: 15px 0;
+        }
+
+        button {
+            margin: 10px 0;
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .table-container {
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 70vh;
+            margin-top: 20px;
+        }
+
+        #dossierCount {
+            margin: 10px 0;
+            font-weight: bold;
+            color: #333;
+        }
+
+        #smiTable {
+            margin: 0 auto;
+            border-collapse: collapse;
+            min-width: 1000px;
+            width: 100%;
+            font-size: 13px;
+            display: none;
+        }
+
+        #smiTable th,
+        #smiTable td {
+            border: 1px solid #ccc;
+            padding: 6px 10px;
+            text-align: left;
+            vertical-align: top;
+            white-space: nowrap;
+        }
+
+        #smiTable th {
+            background: #f2f2f2;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        /* Zebra striping */
+        #smiTable tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        /* Highlight rule */
+        .highlight {
+            background-color: yellow !important;
+        }
+
+        .highlight_high {
+            background-color: orange !important;
+        }
+
+        .highlight_critical {
+            background-color: red !important;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Upload a .xlsx file</h2>
+        <h3>Upload TRM dump with only Open dossiers</h3>
+        <input type="file" id="xlsxfile" accept=".xlsx" />
+        <br />
+        <button id="uploadBtn">Upload & Render</button>
+
+        <div id="dossierCount"></div>
+
+        <div class="table-container">
+            <table id="smiTable">
+                <thead>
+                    <tr id="headerRow"></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const HEADERS = [
+            "Dossier Ref", "Dossier Title", "Product", "Urgency",
+            "Owner name", "Owner team", "Dossier Status", "Last Update"
+        ];
+
+        let parsedData = [];
+
+        function normalizeKey(key) {
+            return key.toString().trim().replace(/\s+/g, " ").toLowerCase();
+        }
+
+        document.getElementById('xlsxfile').addEventListener('change', handleFile, false);
+        document.getElementById('uploadBtn').addEventListener('click', renderTable, false);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+
+                let json = XLSX.utils.sheet_to_json(worksheet, {
+                    defval: "",
+                    blankrows: false,
+                    range: worksheet['!ref']
+                });
+
+                json = json.filter(row => row["Dossier Ref"] && row["Dossier Ref"].toString().trim() !== "");
+
+                parsedData = json.map(row => {
+                    const newRow = {};
+                    Object.keys(row).forEach(k => {
+                        newRow[normalizeKey(k)] = row[k];
+                    });
+                    return newRow;
+                });
+
+                console.log("File parsed. Rows available:", parsedData.length);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ✅ Refactored: function defined once outside the loop
+        function businessDaysDiff(startDate, endDate) {
+            if (startDate > endDate) return 0;
+
+            let count = 0;
+            let current = new Date(startDate);
+            current.setHours(0, 0, 0, 0);
+
+            const target = new Date(endDate);
+            target.setHours(0, 0, 0, 0);
+
+            while (current < target) {
+                const day = current.getDay();
+                if (day !== 0 && day !== 6) { // exclude Sunday(0) & Saturday(6)
+                    count++;
+                }
+                current.setDate(current.getDate() + 1);
+            }
+            return count;
+        }
+
+        function renderTable() {
+            if (!parsedData.length) {
+                alert("Please upload a file first!");
+                return;
+            }
+
+            const table = document.getElementById('smiTable');
+            const theadRow = document.getElementById('headerRow');
+            const tbody = table.querySelector('tbody');
+            const dossierCount = document.getElementById('dossierCount');
+
+            theadRow.innerHTML = "";
+            tbody.innerHTML = "";
+
+            // Build headers
+            HEADERS.forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                theadRow.appendChild(th);
+            });
+            const thDays = document.createElement('th');
+            thDays.textContent = "Days Since Last Update";
+            theadRow.appendChild(thDays);
+
+            const filtered = parsedData.filter(row =>
+                row[normalizeKey("Owner team")] === "N/A-SDS_DigitalSolutions_L2_AW-CUST"
+            );
+
+            // Show dossier count
+            dossierCount.textContent = `Total dossiers: ${filtered.length}`;
+
+            filtered.forEach(row => {
+                const tr = document.createElement('tr');
+
+                HEADERS.forEach(h => {
+                    const td = document.createElement('td');
+                    td.textContent = row[normalizeKey(h)] || "";
+                    tr.appendChild(td);
+                });
+
+                // Days since last update
+                const tdDays = document.createElement('td');
+                let daysDiff = "";
+                const lastUpdate = row[normalizeKey("Last Update")];
+                if (lastUpdate) {
+                    const parts = lastUpdate.split("/");
+                    if (parts.length === 3) {
+                        const d = parseInt(parts[0], 10);
+                        const m = parseInt(parts[1], 10) - 1;
+                        const y = parseInt(parts[2], 10);
+                        const lastDate = new Date(y, m, d);
+                        const today = new Date();
+                        daysDiff = businessDaysDiff(lastDate, today);
+                    }
+                }
+                tdDays.textContent = daysDiff !== "" ? daysDiff : "-";
+                tr.appendChild(tdDays);
+
+                // ✅ Highlight conditions
+                if (row[normalizeKey("Urgency")] === "Regular" && daysDiff >= 3) {
+                    tr.classList.add("highlight");
+                } else if (row[normalizeKey("Urgency")] === "High" && daysDiff >= 2) {
+                    tr.classList.add("highlight_high");
+                } else if (row[normalizeKey("Urgency")] === "Critical" && daysDiff >= 1) {
+                    tr.classList.add("highlight_critical");
+                }
+
+                tbody.appendChild(tr);
+            });
+
+            table.style.display = filtered.length ? 'table' : 'none';
+        }
+
+    </script>
+</body>
+
+</html>

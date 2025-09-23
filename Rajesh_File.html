@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>EXP Dossier View</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f9f9f9;
+        }
+
+        h2 {
+            text-align: center;
+            color: #222;
+        }
+
+        input,
+        button,
+        select {
+            margin: 5px;
+            padding: 6px 10px;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: linear-gradient(90deg, #0056b3, #003d82);
+        }
+
+        .table-container {
+            margin-top: 20px;
+            overflow-x: auto;
+            border: 1px solid #eaeaea;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fff;
+        }
+
+        #smiTable {
+            border-collapse: collapse;
+            width: 100%;
+            font-size: 13px;
+        }
+
+        #smiTable th,
+        #smiTable td {
+            border: 1px solid #ccc;
+            padding: 6px 10px;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        #smiTable th {
+            background: #007bff;
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+
+        #smiTable tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        #smiTable tbody tr:hover {
+            background: #f1f8ff;
+        }
+
+        .highlight-90 {
+            background-color: #ffdddd !important;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Upload a .xlsx file</h2>
+    <h3>
+        <p> Only checks open dossiers. Days count includes Weekends. </p>
+    </h3>
+    <input type="file" id="xlsxfile" accept=".xlsx" />
+    <button id="uploadBtn">Upload & Render</button>
+
+    <label for="ownerFilter">Owner Team:</label>
+    <select id="ownerFilter" style="display:none;"></select>
+
+    <label for="daysFilter">Days since last update:</label>
+    <select id="daysFilter" style="display:none;">
+        <option value="All">All</option>
+        <option value="<=30">
+            <= 30</option>
+        <option value="30-50">30 - 50</option>
+        <option value="50-100">50 – 100</option>
+        <option value="100-150">100 – 150</option>
+        <option value=">150">> 150</option>
+    </select>
+
+    <button id="downloadBtn" style="display:none;">Download Rendered Data</button>
+
+    <p id="rowCount" style="font-weight:bold; margin-top:10px;"></p>
+
+    <label>
+        <input type="checkbox" id="highlight90Toggle" />
+        Highlight rows >= 90 days
+    </label>
+
+
+    <div class="table-container">
+        <table id="smiTable" style="display:none;">
+            <thead>
+                <tr id="headerRow"></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        const HEADERS = ["Dossier Reference", "Dossier Title", "Changed at", "Owner Team", "Product Name", "Days since last update"];
+
+        const ALLOWED_TEAMS = [
+            "N/A-SDS_L1_Aw-Exp",
+            "N/A-SDS_DigitalSolutions_L2_AW-EXP",
+            "N/A-SDS_DigitalSolutions_Expert_AW-EXP"
+        ];
+
+        let parsedData = [];
+        let currentFilteredData = []; // store currently rendered data
+        let currentSort = { column: null, asc: true };
+
+        function normalizeKey(key) {
+            return key.toString().trim().toLowerCase();
+        }
+
+        function parseChangedAt(dateStr) {
+            if (!dateStr) return null;
+            const [datePart, timePart] = dateStr.split(" ");
+            if (!datePart) return null;
+
+            const [day, mon, year] = datePart.split("-");
+            const months = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+
+            let hour = 0, min = 0;
+            if (timePart) [hour, min] = timePart.split(":").map(Number);
+
+            return new Date(year, months[mon.toUpperCase()], Number(day), hour, min);
+        }
+
+        function daysSinceUpdate(dateStr) {
+            const parsedDate = parseChangedAt(dateStr);
+            if (!parsedDate) return "";
+            const today = new Date();
+            const diffTime = today - parsedDate;
+            return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        document.getElementById('xlsxfile').addEventListener('change', handleFile, false);
+
+        document.getElementById('uploadBtn').addEventListener('click', () => {
+            renderFilteredTable();
+            populateOwnerFilter(parsedData);
+            document.getElementById("daysFilter").style.display = "inline-block";
+            document.getElementById("downloadBtn").style.display = "inline-block";
+        }, false);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+
+                let json = XLSX.utils.sheet_to_json(worksheet, { defval: "", blankrows: false });
+                json = json.filter(row =>
+                    row["Dossier Status"] &&
+                    row["Dossier Status"].toString().trim().toLowerCase() === "open" &&
+                    ALLOWED_TEAMS.includes(row["Owner Team"])
+                );
+
+                parsedData = json.map(row => {
+                    const newRow = {};
+                    Object.keys(row).forEach(k => {
+                        newRow[normalizeKey(k)] = row[k];
+                    });
+                    newRow["days since last update"] = daysSinceUpdate(row["Changed at"]);
+                    return newRow;
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function populateOwnerFilter(data) {
+            const filter = document.getElementById("ownerFilter");
+            filter.innerHTML = "";
+            if (!data.length) return;
+
+            const uniqueTeams = [...new Set(data.map(row => row["owner team"]))];
+            const allOption = document.createElement("option");
+            allOption.value = "All";
+            allOption.textContent = "All";
+            filter.appendChild(allOption);
+
+            uniqueTeams.forEach(team => {
+                const opt = document.createElement("option");
+                opt.value = team;
+                opt.textContent = team;
+                filter.appendChild(opt);
+            });
+
+            filter.style.display = "inline-block";
+            filter.onchange = renderFilteredTable;
+            document.getElementById("daysFilter").onchange = renderFilteredTable;
+        }
+
+        function renderFilteredTable() {
+            let data = [...parsedData];
+            const ownerFilter = document.getElementById("ownerFilter").value;
+            const daysFilter = document.getElementById("daysFilter").value;
+
+            if (ownerFilter && ownerFilter !== "All") {
+                data = data.filter(row => row["owner team"] === ownerFilter);
+            }
+
+            if (daysFilter && daysFilter !== "All") {
+                data = data.filter(row => {
+                    const days = Number(row["days since last update"]);
+                    if (daysFilter === "<=30") return days <= 30;
+                    if (daysFilter === "30-50") return days > 30 && days <= 50;
+                    if (daysFilter === "50-100") return days > 50 && days <= 100;
+                    if (daysFilter === "100-150") return days > 100 && days <= 150;
+                    if (daysFilter === ">150") return days > 150;
+                });
+            }
+
+            currentFilteredData = data;
+            renderTable(data);
+        }
+
+        function renderTable(data) {
+            const tbody = document.querySelector("#smiTable tbody");
+            const headerRow = document.getElementById("headerRow");
+            tbody.innerHTML = "";
+            headerRow.innerHTML = "";
+
+            if (!data.length) {
+                document.getElementById("rowCount").textContent = "No records found.";
+                document.getElementById("smiTable").style.display = "none";
+                return;
+            }
+
+            HEADERS.forEach(h => {
+                const th = document.createElement("th");
+                th.textContent = h;
+                th.style.cursor = "pointer";
+                th.onclick = () => sortTableBy(h, data);
+                headerRow.appendChild(th);
+            });
+
+            // check toggle state
+            const highlight90 = document.getElementById("highlight90Toggle").checked;
+
+
+            data.forEach(row => {
+                const tr = document.createElement("tr");
+                // highlight logic
+                if (highlight90) {
+                    const days = Number(row["days since last update"]);
+
+                    if (!isNaN(days) && days >= 90) {
+                        tr.classList.add("highlight-90");
+                    }
+                }
+                HEADERS.forEach(h => {
+                    const td = document.createElement("td");
+                    td.textContent = row[normalizeKey(h)] || "";
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById("smiTable").style.display = "table";
+            document.getElementById("rowCount").textContent = `Total records: ${data.length}`;
+            document.getElementById("highlight90Toggle").addEventListener("change", () => {
+                renderTable(currentFilteredData);
+            });
+
+        }
+
+        function sortTableBy(header, data) {
+            const key = normalizeKey(header);
+            if (currentSort.column === key) {
+                currentSort.asc = !currentSort.asc;
+            } else {
+                currentSort = { column: key, asc: true };
+            }
+
+            data.sort((a, b) => {
+                let valA = a[key], valB = b[key];
+                if (key === "days since last update") {
+                    valA = Number(valA); valB = Number(valB);
+                    return currentSort.asc ? valA - valB : valB - valA;
+                }
+                valA = valA ? valA.toString().toLowerCase() : "";
+                valB = valB ? valB.toString().toLowerCase() : "";
+                if (valA < valB) return currentSort.asc ? -1 : 1;
+                if (valA > valB) return currentSort.asc ? 1 : -1;
+                return 0;
+            });
+
+            currentFilteredData = data;
+            renderTable(data);
+        }
+
+        document.getElementById("downloadBtn").addEventListener("click", () => {
+            if (!currentFilteredData.length) {
+                alert("No data to download!");
+                return;
+            }
+
+            // Convert to worksheet
+            const exportData = currentFilteredData.map(row => {
+                const obj = {};
+                HEADERS.forEach(h => {
+                    obj[h] = row[normalizeKey(h)];
+                });
+                return obj;
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+
+            //  Auto-size column widths
+            const colWidths = HEADERS.map(h => {
+                // start with header length
+                let maxLen = h.length;
+                // check each row's value length
+                exportData.forEach(row => {
+                    const val = row[h] ? row[h].toString() : "";
+                    if (val.length > maxLen) maxLen = val.length;
+                });
+                // Excel column width is approx char count
+                return { wch: maxLen + 2 }; // add padding
+            });
+            ws['!cols'] = colWidths;
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Filtered Data");
+
+            XLSX.writeFile(wb, "Filtered_Data.xlsx");
+        });
+    </script>
+</body>
+
+</html>

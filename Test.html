@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Knowledge Assistant</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f5f6fa;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .chat-container {
+            width: 400px;
+            max-width: 95%;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: #fff;
+            padding: 12px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        #chatbox {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            background: #f9fafb;
+        }
+
+        .msg {
+            margin: 8px 0;
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+
+        .user {
+            background: #3498db;
+            color: #fff;
+            margin-left: auto;
+            border-bottom-right-radius: 2px;
+        }
+
+        .bot {
+            background: #ecf0f1;
+            color: #2c3e50;
+            margin-right: auto;
+            border-bottom-left-radius: 2px;
+        }
+
+        .input-area {
+            display: flex;
+            border-top: 1px solid #eee;
+            padding: 10px;
+            background: #fff;
+        }
+
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #3498db;
+        }
+
+        button {
+            margin-left: 8px;
+            padding: 10px 16px;
+            background: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+    </style>
+
+    <script>
+        function appendMsg(sender, text) {
+            const div = document.createElement("div");
+            div.className = "msg " + sender;
+            div.innerHTML = text;
+            document.getElementById("chatbox").appendChild(div);
+            document.getElementById("chatbox").scrollTop =
+                document.getElementById("chatbox").scrollHeight;
+        }
+
+        function ask() {
+            const q = document.getElementById("query").value;
+            if (!q) return;
+            appendMsg("user", q);
+            document.getElementById("query").value = "";
+
+            google.script.run
+                .withSuccessHandler(function (answer) {
+                    appendMsg("bot", answer);
+                })
+                .askBot(q); // GAS backend call
+        }
+    </script>
+</head>
+
+<body>
+    <div class="chat-container">
+        <div class="header">💡 Knowledge Assistant</div>
+        <div id="chatbox"></div>
+        <div class="input-area">
+            <input type="text" id="query" placeholder="Ask me anything..." onkeypress="if(event.key==='Enter') ask()" />
+            <button onclick="ask()">Send</button>
+        </div>
+    </div>
+</body>
+
+</html>
