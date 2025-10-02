@@ -133,7 +133,7 @@
 <body>
     <div class="container">
         <h2>SMI Parser with Mapping</h2>
-        <h3 id="repList" style="display:none;">Available REP Codes: </h3>
+        <h3 id="repList" style="display:none;">Available Report Codes: </h3>
 
         <div class="controls">
             <input type="file" id="txtfile" accept=".txt,text/plain" />
@@ -168,22 +168,7 @@
         const allPatterns = {}; // { REP: Set(), R: Set(), ... }
 
         const mapping = {
-            "DFD": "ACMS",
-            "CFD": "PFR/CFR",
-            "M10": "AOC",
-            "M11": "AOC",
-            "M12": "AOC",
-            "M13": "AOC",
-            "M14": "AOC",
-            "M15": "AOC",
-            "M30": "AOC",
-            "M31": "AOC",
-            "M32": "AOC",
-            "M33": "AOC",
-            "ARR": "AOC",
-            "DEP": "AOC",
-            "A80": "AOC",
-            "A81": "AOC"
+            "SMI": "Type of message"
         };
 
         // Define extractors once (easy to extend later)
@@ -192,9 +177,9 @@
             R: /\bR\d{1,3}\b(?!P)/g // matches R123 but NOT REP123
         };
 
-        // Extract MT, CB, TA, OX, DO counts inside SRR
+        // Servicing reports
         function extractSRRData(content) {
-            const markers = ["MT", "CB", "TA", "OX", "DO"];
+            const markers = ["Servicing parameter1", "Servicing parameter2", "Servicing parameter3"];
             let results = [];
 
             markers.forEach(marker => {
