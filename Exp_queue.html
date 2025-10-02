@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>EXP dossier view</title>
+    <title> dossier view</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -174,10 +174,10 @@
             <label for="ownerFilter">Owner Team:</label>
             <select id="ownerFilter">
                 <option value="all">All</option>
-                <option value="SDS_DigitalSolutions_L2">SDS_DigitalSolutions_L2</option>
-                <option value="N/A-SDS_DigitalSolutions_L2_AW-CUST">N/A-SDS_DigitalSolutions_L2_AW-CUST</option>
-                <option value="N/A-SDS_DigitalSolutions_L2_AW-EXP">N/A-SDS_DigitalSolutions_L2_AW-EXP</option>
-                <option value="N/A-SDS_DigitalSolutions_L2_AW-DEL">N/A-SDS_DigitalSolutions_L2_AW-DEL</option>
+                <option value="">dummy queue1</option>
+                <option value="">dummy queue2</option>
+                <option value="">dummy queue3</option>
+                <option value="">dummy queue4</option>
             </select>
 
             <input type="date" id="startDate" style="display:none;">
@@ -186,7 +186,7 @@
 
             <div id="dossierCount"></div>
 
-            <label><input type="checkbox" id="toggleCategory"> Show PMOPS Categories</label>
+            <label><input type="checkbox" id="toggleCategory"> Show  Categories</label>
             <label><input type="checkbox" id="toggleHighlight"> Highlight rows with External Ref &gt;=25 days</label>
             <label><input type="checkbox" id="toggleHighlight15"> Highlight rows without External Ref &gt;=15
                 days</label>
@@ -215,7 +215,7 @@
     </div>
 
     <script>
-        const HEADERS = ["Dossier Ref", "Dossier Title", "Product", "Urgency", "External Ref", "Owner team", "Submitted Date", "Last Update"];
+        const HEADERS = ["Col1", "Col2", "Col3"];
         let parsedData = [], chartInstance = null, sortDirection = null;
 
         function normalizeKey(key) { return key.toString().trim().replace(/\s+/g, " ").toLowerCase(); }

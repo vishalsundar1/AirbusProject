@@ -1,3 +1,5 @@
+// Can only be used in Google Apps Script. Need to make changes to make it standalone
+
 function doGet() {
     return HtmlService.createHtmlOutputFromFile("index")
         .setTitle("Knowledge Assistant")
